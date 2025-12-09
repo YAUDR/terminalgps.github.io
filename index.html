@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TERMINAL GPS</title>
+<style>
+body{
+  margin:0;
+  background:black;
+  font-family:monospace;
+  color:#ffffff;
+  overflow-x:hidden;
+}
+#terminal{
+  padding:10px;
+  white-space:pre-wrap;
+  line-height:1.3em;
+  position:relative;
+  font-size:14px;
+  text-transform:uppercase;
+}
+.line{
+  position:relative;
+  display:block;
+  padding-left:20px;
+  animation: flicker 1s infinite alternate;
+}
+.line img{
+  position:absolute;
+  left:0;
+  top:0;
+  width:16px;
+  height:16px;
+  filter:grayscale(100%);
+}
+@keyframes flicker{
+  0%{opacity:0.9;}
+  50%{opacity:1;}
+  100%{opacity:0.85;}
+}
+input,button,label{
+  background:black;
+  color:#ffffff;
+  border:1px solid #ffffff;
+  font-family:monospace;
+  font-size:12px;
+  padding:3px 6px;
+  margin:2px;
+  text-transform:uppercase;
+}
+#cursor{
+  display:inline-block;
+  width:10px;
+  background:#ffffff;
+  animation: blink 1s steps(1) infinite;
+  vertical-align:text-bottom;
+}
+@keyframes blink{
+  50%{opacity:0;}
+}
+</style>
+</head>
+<body>
+
+<div style="text-align:center; margin:5px;">
+  >TYPE LAT,LONG <input id="latlon" placeholder="51.432367,-0.296754">
+  MAX RANGE (M): <input id="range" value="3500" style="width:60px">
+  <label><input type="checkbox" id="filterPhone"> ONLY WITH PHONE</label>
+  <button id="runBtn">RUN</button>
+</div>
+
+<div id="terminal">
+&gt; WAITING FOR INPUT...
+<div id="cursor"></div>
+</div>
+
+<script>
+const TERMINAL=document.getElementById("terminal");
+
+// PHONE ICON BASE64 (B&W)
+const PHONEICON="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAAUklEQVR4AWMYHbgzgBBxA0GAyPgg4MRGTEbZBBkzVQNgM+4j4OLQaGwMN8FgZhQ0iCxhi8ZoMM5bATUGQZMiNwEmM+H+OQgCz4pA6VYBxYAAAAASUVORK5CYII=";
+
+function appendLine(TEXT,COLOR,HASPHONE=false,PHONETEXT=""){
+  const DIV=document.createElement("div");
+  DIV.className="line";
+  DIV.style.color=COLOR;
+  DIV.textContent=TEXT.toUpperCase();
+  if(HASPHONE){
+    const IMG=document.createElement("img");
+    IMG.src=PHONEICON;
+    DIV.insertBefore(IMG,DIV.firstChild);
+  }
+  if(PHONETEXT) DIV.innerHTML+=` <span style="color:#004ddb">${PHONETEXT.toUpperCase()}</span>`;
+  TERMINAL.insertBefore(DIV,document.getElementById("cursor"));
+}
+
+async function fetchStores(LAT,LON){
+  const RANGE=parseInt(document.getElementById("range").value)||3500;
+  const FILTERPHONE=document.getElementById("filterPhone").checked;
+
+  appendLine(`>TYPE LAT LONG\n>${LAT}, ${LON}`,"#eaff00");
+
+  const QUERY=`[out:json];(
+    node["amenity"="fast_food"](around:${RANGE},${LAT},${LON});
+    way["amenity"="fast_food"](around:${RANGE},${LAT},${LON});
+    relation["amenity"="fast_food"](around:${RANGE},${LAT},${LON});
+  );out center;`;
+
+  try{
+    const RES=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:QUERY});
+    const DATA=await RES.json();
+
+    let FILTERED=DATA.elements;
+    if(FILTERPHONE){
+      FILTERED=FILTERED.filter(e=>e.tags.phone);
+    }
+
+    appendLine(`>LOCATIONS FOUND: ${FILTERED.length} IN RANGE: ${RANGE}`,"#6adb00");
+
+    FILTERED.forEach((E,I)=>{
+      const SLAT=E.lat||(E.center&&E.center.lat);
+      const SLON=E.lon||(E.center&&E.center.lon);
+      const PHONE=E.tags.phone||"";
+      const NAME=E.tags.name||"N/A";
+      appendLine(`#${I+1} ${NAME} - ${SLAT},${SLON}`, PHONE?"#eaff00":"#eaff00", PHONE, PHONE);
+    });
+  }catch(E){
+    appendLine(">ERROR FETCHING DATA","red");
+    console.error(E);
+  }
+}
+
+document.getElementById("runBtn").addEventListener("click",()=>{
+  const VAL=document.getElementById("latlon").value.split(",");
+  if(VAL.length!==2) return appendLine(">INVALID INPUT","red");
+  const LAT=parseFloat(VAL[0].trim());
+  const LON=parseFloat(VAL[1].trim());
+  if(isNaN(LAT)||isNaN(LON)) return appendLine(">INVALID INPUT","red");
+  TERMINAL.innerHTML='<div id="cursor"></div>'; // clear previous
+  fetchStores(LAT,LON);
+});
+</script>
+
+</body>
+</html>
